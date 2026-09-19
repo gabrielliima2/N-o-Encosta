@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Não Encosta!</title>
+<!-- Fonte "de jogo" (arredondada/forte). Fallback local já cobre offline —
+     veja assets/fonts/README.md para deixar isso 100% offline no app futuro. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="game-container">
+
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Botão de pausa (visível somente durante a partida) -->
+    <button id="btn-pause" class="pause-btn hidden" aria-label="Pausar">⏸</button>
+
+    <!-- HUD (durante o jogo) -->
+    <div id="hud" class="hidden">
+      <div id="hud-score">0</div>
+      <div id="hud-coins">🪙 <span id="hud-coins-value">0</span></div>
+    </div>
+
+    <!-- TELA: MENU -->
+    <div id="screen-menu" class="screen">
+      <div class="panel panel-menu">
+        <div class="mascot" aria-hidden="true">
+          <div class="mascot-eye"></div>
+        </div>
+        <h1 class="title">NÃO ENCOSTA!</h1>
+        <div class="record-line">🏆 Recorde: <span id="menu-record">0</span></div>
+        <button id="btn-play" class="btn btn-primary btn-lg">▶ JOGAR</button>
+        <button id="btn-skins" class="btn btn-secondary">🎨 SKINS &amp; LOJA</button>
+        <button id="btn-settings" class="btn btn-secondary">⚙ CONFIGURAÇÕES</button>
+      </div>
+    </div>
+
+    <!-- TELA: GAME OVER -->
+    <div id="screen-gameover" class="screen hidden">
+      <div class="panel panel-enter">
+        <h2 class="title-small">GAME OVER</h2>
+        <div id="gameover-newrecord" class="new-record hidden">🔥 NOVO RECORDE!</div>
+        <div class="stat-box">
+          <div class="stat-item">
+            <span class="stat-label">Pontuação</span>
+            <span class="stat-value" id="gameover-score">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Recorde</span>
+            <span class="stat-value" id="gameover-record">0</span>
+          </div>
+        </div>
+        <button id="btn-restart" class="btn btn-primary">🔄 JOGAR NOVAMENTE</button>
+        <button id="btn-continue" class="btn btn-continue">▶ CONTINUAR</button>
+        <button id="btn-gameover-menu" class="btn btn-secondary">🏠 MENU INICIAL</button>
+      </div>
+    </div>
+
+    <!-- TELA: PAUSA -->
+    <div id="screen-pause" class="screen hidden">
+      <div class="panel panel-enter">
+        <h2 class="title-small">PAUSADO</h2>
+        <button id="btn-pause-continue" class="btn btn-primary">▶ CONTINUAR</button>
+        <button id="btn-pause-settings" class="btn btn-secondary">⚙ CONFIGURAÇÕES</button>
+        <button id="btn-pause-menu" class="btn btn-secondary">🏠 MENU INICIAL</button>
+      </div>
+    </div>
+
+    <!-- TELA: CONFIRMAR SAÍDA -->
+    <div id="screen-confirm-exit" class="screen hidden">
+      <div class="panel panel-enter">
+        <h2 class="title-small">SAIR DA PARTIDA?</h2>
+        <p class="confirm-text">Todo o progresso desta partida será perdido.</p>
+        <button id="btn-confirm-cancel" class="btn btn-secondary">CANCELAR</button>
+        <button id="btn-confirm-exit" class="btn btn-danger">SAIR</button>
+      </div>
+    </div>
+
+    <!-- TELA: SKINS / LOJA -->
+    <div id="screen-skins" class="screen hidden">
+      <div class="panel panel-enter panel-wide">
+        <h2 class="title-small">SKINS &amp; LOJA</h2>
+        <div id="skins-coins-balance" class="record-line">🪙 <span id="skins-coins-value">0</span></div>
+        <div id="skins-grid"></div>
+        <button id="btn-skins-back" class="btn btn-primary">VOLTAR</button>
+      </div>
+    </div>
+
+    <!-- TELA: CONFIGURAÇÕES -->
+    <div id="screen-settings" class="screen hidden">
+      <div class="panel panel-enter">
+        <h2 class="title-small">⚙ CONFIGURAÇÕES</h2>
+
+        <div class="setting-row">
+          <span class="setting-label">🔊 Som</span>
+          <button id="toggle-sound" class="toggle-btn" data-key="sound">ON</button>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">🎵 Música</span>
+          <button id="toggle-music" class="toggle-btn" data-key="music">ON</button>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">📳 Vibração</span>
+          <button id="toggle-vibration" class="toggle-btn" data-key="vibration">ON</button>
+        </div>
+
+        <div class="setting-row volume-row">
+          <span class="setting-label">🎵 Volume da música</span>
+          <input id="slider-music-volume" class="volume-slider" type="range" min="0" max="100" value="70">
+        </div>
+        <div class="setting-row volume-row">
+          <span class="setting-label">🔊 Volume dos efeitos</span>
+          <input id="slider-sfx-volume" class="volume-slider" type="range" min="0" max="100" value="80">
+        </div>
+
+        <button id="btn-settings-back" class="btn btn-primary">VOLTAR</button>
+
+        <p id="settings-diagnostics" class="diagnostics-text"></p>
+      </div>
+    </div>
+
+    <!-- Overlay de anúncio recompensado (placeholder) -->
+    <div id="screen-ad-loading" class="screen hidden">
+      <div class="panel panel-enter">
+        <h2 class="title-small">▶ ANÚNCIO</h2>
+        <p id="ad-loading-text" class="confirm-text">Carregando anúncio...</p>
+      </div>
+    </div>
+
+    <!-- Overlay de contagem regressiva (pós-anúncio, antes de renascer) -->
+    <div id="screen-countdown" class="screen countdown-screen hidden">
+      <div id="countdown-label" class="countdown-label">PREPARE-SE!</div>
+      <div id="countdown-number" class="countdown-number"></div>
+    </div>
+
+  </div>
+
+  <script src="js/storage.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/skins.js"></script>
+  <script src="js/ads.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/obstacles.js"></script>
+  <script src="js/coins.js"></script>
+  <script src="js/background.js"></script>
+  <script src="js/particles.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
