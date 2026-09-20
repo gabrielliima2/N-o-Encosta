@@ -39,17 +39,6 @@ html, body {
   touch-action: none;
 }
 
-/* Botões iniciam transparentes */
-#screen-gameover .btn {
-  opacity: 0;
-  transition: opacity 0.5s ease-in-out;
-}
-
-/* Quando a classe é adicionada ao painel, os botões ficam 100% visíveis */
-#screen-gameover .panel.show-buttons .btn {
-  opacity: 1;
-}
-
 #game-container {
   position: relative;
   width: 100%;
@@ -706,4 +695,41 @@ html, body {
   color: rgba(255,255,255,0.55);
   font-weight: 700;
   padding: 6px 0;
+}
+
+/* ---------- Sequência de revelação do Game Over (evita clique acidental) ---------- */
+/* As 3 fases começam invisíveis e cada uma é revelada via JS (classe .go-visible)
+   no momento certo — ver runGameOverIntroSequence() em game.js. Os botões, além
+   de opacos, ficam com pointer-events:none até serem revelados. */
+
+.go-stage-title, .go-stage-stats, .go-stage-buttons {
+  opacity: 0;
+  transform: scale(0.9) translateY(4px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.go-stage-title.go-visible, .go-stage-stats.go-visible, .go-stage-buttons.go-visible {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.go-stage-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.go-stage-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  pointer-events: none; /* trava visual extra — a trava "de verdade" é em JS (novo toque obrigatório) */
+}
+
+.go-stage-buttons.go-visible {
+  pointer-events: auto;
 }

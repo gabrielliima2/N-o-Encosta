@@ -44,6 +44,12 @@ const Game = (() => {
   let secretHintShown = false; // no máximo 1 dica de segredo por partida
   let ambientCueCooldown = 0; // som ambiente do mundo — bem ocasional, nunca em loop
 
+  // ---------- Sequência de Game Over (evita clique acidental do toque que matou) ----------
+  // Fases: 'none' -> 'title' -> 'counting' -> 'wait' -> 'buttons' -> 'interactive'
+  // Só em 'interactive' um pointerdown NOVO libera os cliques dos botões.
+  let gameOverPhase = 'none';
+  let gameOverInputLocked = false;
+
   const CONTINUE_INVULNERABLE_SECONDS = 2;
   const COUNTDOWN_STEP_MS = 1000; // duração de cada número (3, 2, 1) — total ~3s
 
@@ -123,11 +129,31 @@ const Game = (() => {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') onPress(e);
     });
+
+    // ---------- Trava de "novo toque" do Game Over ----------
+    // Reaproveita a MESMA arquitetura de pointer events acima — não é um sistema
+    // de input paralelo, só observa quando um toque/clique NOVO começa (capture
+    // phase, roda antes do 'click' de qualquer botão). O toque que causou a
+    // morte já tinha começado ANTES da fase virar 'interactive', então ele
+    // nunca satisfaz esta condição — só um pointerdown genuinamente posterior
+    // libera os botões.
+    window.addEventListener('pointerdown', () => {
+      if (gameOverPhase === 'interactive' && gameOverInputLocked) {
+        gameOverInputLocked = false;
+      }
+    }, true);
   }
 
   // ---------- Início / reinício de partida ----------
 
   function startGame() {
+    // Se viemos do Game Over, isso só executa de verdade quando o toque é NOVO
+    // (ver a trava de input mais abaixo) — evita que o toque que matou o
+    // personagem também inicie uma partida nova por acidente.
+    if (state === STATE.GAME_OVER && gameOverInputLocked) return;
+    gameOverPhase = 'none';
+    gameOverInputLocked = false;
+
     score = 0;
     hasContinuedThisRun = false;
     continueRequestInProgress = false;
@@ -178,35 +204,112 @@ const Game = (() => {
     AudioManager.stopMusic(); // música para ao morrer (não toca na tela de Game Over)
     if (particles) particles.spawnDeathBurst(player.x, player.y); // só visual
 
+    const finalScore = score; // guardado em variável própria — a contagem visual sempre recomeça do 0
+
     const record = Storage.getRecord();
-    const isNewRecord = score > record;
-    if (isNewRecord) {
-      Storage.setRecord(score);
-      Audio2D.playRecord();
-      Audio2D.vibrateRecord();
-    }
+    const isNewRecord = finalScore > record;
+    if (isNewRecord) Storage.setRecord(finalScore); // já persiste; o som/banner só aparecem depois da contagem
 
     const highest = Storage.getHighestWorld();
     const isNewMaxWorld = currentWorld.id > runStartHighestWorldId;
 
     UI.showHud(false);
-    setTimeout(() => Audio2D.playGameOver(), 120);
 
     const continueAvailable = !hasContinuedThisRun;
-    UI.showGameOver(score, Math.max(score, record), isNewRecord, continueAvailable, {
+
+    // Trava o input ANTES de qualquer coisa aparecer — o toque que causou a
+    // morte (se ainda estiver "no ar") nunca vai satisfazer a condição de
+    // desbloqueio (ver bindInput), então não corre o risco de clicar em nada.
+    gameOverInputLocked = true;
+    gameOverPhase = 'title';
+
+    UI.showGameOverIntro(Math.max(finalScore, record), continueAvailable, {
       currentWorldId: currentWorld.id,
       currentWorldName: currentWorld.name,
       highestWorldId: highest.id,
-      highestWorldName: highest.name || currentWorld.name,
-      isNewMaxWorld
+      highestWorldName: highest.name || currentWorld.name
     });
+
+    runGameOverSequence(finalScore, isNewRecord, isNewMaxWorld);
+  }
+
+  /**
+   * Orquestra a pequena "apresentação" de resultado: GAME OVER -> pontuação
+   * subindo de 0 até o valor real (com som a cada passo) -> pequena pausa ->
+   * botões em fade-in. Só ao final disso a fase vira 'interactive', que é a
+   * única condição em que um pointerdown novo destrava os botões.
+   */
+  function runGameOverSequence(finalScore, isNewRecord, isNewMaxWorld) {
+    const TITLE_DELAY = 150;   // pequena pausa antes de "GAME OVER" aparecer
+    const STATS_DELAY = 450;   // "PONTUAÇÃO" (começando em 0) aparece pouco depois
+    const POST_COUNT_PAUSE = 500; // pausa pedida explicitamente antes dos botões
+
+    setTimeout(() => {
+      UI.revealGameOverStage('title');
+      Audio2D.playGameOver(); // som já existente — nenhum efeito novo criado
+    }, TITLE_DELAY);
+
+    setTimeout(() => {
+      gameOverPhase = 'counting';
+      UI.revealGameOverStage('stats'); // já aparece mostrando "0"
+
+      runScoreCountUp(finalScore, () => {
+        if (isNewRecord) {
+          Audio2D.playRecord();
+          Audio2D.vibrateRecord();
+        }
+        UI.revealGameOverRecordBanners(isNewRecord, isNewMaxWorld);
+
+        gameOverPhase = 'wait';
+        setTimeout(() => {
+          UI.revealGameOverStage('buttons');
+          gameOverPhase = 'interactive'; // só agora um toque NOVO pode liberar os cliques
+        }, POST_COUNT_PAUSE);
+      });
+    }, STATS_DELAY);
+  }
+
+  /**
+   * Anima a pontuação de 0 até `finalScore`, chamando `onDone()` ao terminar.
+   * Reaproveita Audio2D.playButton() (o "click" que já existe) como tic da
+   * contagem — nenhum sistema de áudio novo é criado. Um único setTimeout
+   * encadeado por vez (nunca setInterval nem múltiplos timers simultâneos).
+   */
+  function runScoreCountUp(finalScore, onDone) {
+    if (finalScore <= 0) {
+      UI.setGameOverScoreNumber(0);
+      onDone();
+      return;
+    }
+
+    const MAX_STEPS = 30; // teto de "tics" — mesmo com pontuações enormes, sem exagerar em som/DOM
+    const steps = Math.min(finalScore, MAX_STEPS);
+    const totalDuration = Math.min(1200, Math.max(600, 300 + finalScore * 4)); // 600–1200ms
+    const stepInterval = totalDuration / steps;
+
+    let currentStep = 0;
+    const tick = () => {
+      currentStep++;
+      const value = currentStep >= steps ? finalScore : Math.round((finalScore / steps) * currentStep);
+      UI.setGameOverScoreNumber(value);
+      Audio2D.playButton(); // "tic" — reaproveita o clique já existente
+
+      if (currentStep < steps) {
+        setTimeout(tick, stepInterval);
+      } else {
+        onDone();
+      }
+    };
+    setTimeout(tick, stepInterval);
   }
 
   /** Botão CONTINUAR da tela de Game Over — dispara o anúncio recompensado (placeholder) */
   function continueGame() {
+    if (gameOverInputLocked) return; // mesma trava do toque que causou a morte
     if (hasContinuedThisRun) return; // só permite 1 continue por partida
     if (continueRequestInProgress) return; // evita cliques duplicados enquanto o anúncio carrega
     continueRequestInProgress = true;
+    gameOverPhase = 'none'; // a partir daqui a sequência de Game Over já foi "usada"
 
     UI.showScreen('screenAdLoading');
     UI.setAdLoadingText('Carregando anúncio...');
@@ -275,6 +378,10 @@ const Game = (() => {
 
   /** Botão "Menu Inicial" da tela de Game Over — sem confirmação (o jogador já morreu) */
   function menuFromGameOver() {
+    if (state === STATE.GAME_OVER && gameOverInputLocked) return; // mesma trava do toque que causou a morte
+    gameOverPhase = 'none';
+    gameOverInputLocked = false;
+
     state = STATE.MENU;
     UI.showHud(false);
     UI.showPauseButton(false);

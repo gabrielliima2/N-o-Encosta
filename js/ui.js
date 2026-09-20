@@ -18,6 +18,9 @@ const UI = (() => {
     menuHighestWorld: document.getElementById('menu-highest-world'),
 
     screenGameover: document.getElementById('screen-gameover'),
+    goStageTitle: document.getElementById('screen-gameover').querySelector('.go-stage-title'),
+    goStageStats: document.getElementById('screen-gameover').querySelector('.go-stage-stats'),
+    goStageButtons: document.getElementById('screen-gameover').querySelector('.go-stage-buttons'),
     gameoverScore: document.getElementById('gameover-score'),
     gameoverRecord: document.getElementById('gameover-record'),
     gameoverNewRecord: document.getElementById('gameover-newrecord'),
@@ -93,61 +96,42 @@ const UI = (() => {
     el.menuHighestWorld.textContent = highest.name ? `${highest.id} — ${highest.name}` : String(highest.id);
   }
 
-// Função auxiliar para animar a contagem do número
-function animateValue(element, start, end, duration) {
-  if (start === end) {
-    element.textContent = String(end);
-    return;
-  }
+  function showGameOverIntro(record, continueAvailable, worldInfo) {
+    // reseta as 3 fases (title/stats/buttons) pra sempre reanimar do zero, mesmo
+    // que a tela já tenha aparecido antes nesta sessão
+    el.goStageTitle.classList.remove('go-visible');
+    el.goStageStats.classList.remove('go-visible');
+    el.goStageButtons.classList.remove('go-visible');
 
-  const startTime = performance.now();
+    el.gameoverScore.textContent = '0'; // a contagem sempre recomeça visualmente do zero
+    el.gameoverRecord.textContent = String(record);
+    el.gameoverNewRecord.classList.add('hidden');
+    el.gameoverNewMaxWorld.classList.add('hidden');
+    el.btnContinue.classList.toggle('hidden', !continueAvailable);
 
-  function updateNumber(currentTime) {
-    const elapsedTime = currentTime - startTime;
-    const progress = Math.min(elapsedTime / duration, 1);
-    
-    // Calcula o valor atual proporcional ao tempo decorrido
-    const currentValue = Math.floor(progress * (end - start) + start);
-    element.textContent = String(currentValue);
-
-    if (progress < 1) {
-      requestAnimationFrame(updateNumber);
+    if (worldInfo) {
+      el.gameoverCurrentWorld.textContent = `MUNDO ${worldInfo.currentWorldId} — ${worldInfo.currentWorldName.toUpperCase()}`;
+      el.gameoverHighestWorld.textContent = `${worldInfo.highestWorldId} — ${worldInfo.highestWorldName.toUpperCase()}`;
     }
+
+    showScreen('screenGameover');
   }
 
-  requestAnimationFrame(updateNumber);
-}
-
-function showGameOver(score, record, isNewRecord, continueAvailable, worldInfo) {
-  // 1. Reseta os textos numéricos para 0 imediatamente
-  el.gameoverScore.textContent = '0';
-  el.gameoverRecord.textContent = '0';
-
-  el.gameoverNewRecord.classList.toggle('hidden', !isNewRecord);
-  el.btnContinue.classList.toggle('hidden', !continueAvailable);
-
-  if (worldInfo) {
-    el.gameoverCurrentWorld.textContent = `MUNDO ${worldInfo.currentWorldId} — ${worldInfo.currentWorldName.toUpperCase()}`;
-    el.gameoverHighestWorld.textContent = `${worldInfo.highestWorldId} — ${worldInfo.highestWorldName.toUpperCase()}`;
-    el.gameoverNewMaxWorld.classList.toggle('hidden', !worldInfo.isNewMaxWorld);
+  /** stage: 'title' | 'stats' | 'buttons' */
+  function revealGameOverStage(stage) {
+    const map = { title: el.goStageTitle, stats: el.goStageStats, buttons: el.goStageButtons };
+    const target = map[stage];
+    if (target) target.classList.add('go-visible');
   }
 
-  // Reseta a visibilidade dos botões
-  const panel = document.querySelector('#screen-gameover .panel');
-  panel.classList.remove('show-buttons');
+  function setGameOverScoreNumber(value) {
+    el.gameoverScore.textContent = String(value);
+  }
 
-  // 2. Exibe a tela de Game Over instantaneamente
-  showScreen('screenGameover');
-
-  // 3. Anima os números de 0 até o valor real (duração de 400ms = bem rápido)
-  animateValue(el.gameoverScore, 0, score, 400);
-  animateValue(el.gameoverRecord, 0, record, 400);
-
-  // 4. Após 0.5s (500ms), faz o fade-in dos botões
-  setTimeout(() => {
-    panel.classList.add('show-buttons');
-  }, 500);
-}
+  function revealGameOverRecordBanners(isNewRecord, isNewMaxWorld) {
+    el.gameoverNewRecord.classList.toggle('hidden', !isNewRecord);
+    el.gameoverNewMaxWorld.classList.toggle('hidden', !isNewMaxWorld);
+  }
 
   function setAdLoadingText(text) {
     el.adLoadingText.textContent = text;
@@ -270,7 +254,8 @@ function showGameOver(score, record, isNewRecord, continueAvailable, worldInfo) 
   return {
     showScreen, showHud, showPauseButton, showWorldHud,
     updateScore, updateCoins, updateMenuRecord, updateMenuHighestWorld,
-    showGameOver, setAdLoadingText, showCountdownStep,
+    showGameOverIntro, revealGameOverStage, setGameOverScoreNumber, revealGameOverRecordBanners,
+    setAdLoadingText, showCountdownStep,
     renderSkins, refreshSettingsToggles, setToggleState,
     refreshVolumeSliders, setDiagnosticsText,
     updateWorldHud, showToast,

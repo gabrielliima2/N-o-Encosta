@@ -52,24 +52,30 @@
     <!-- TELA: GAME OVER -->
     <div id="screen-gameover" class="screen hidden">
       <div class="panel panel-enter">
-        <h2 class="title-small">GAME OVER</h2>
-        <div id="gameover-newrecord" class="new-record hidden">🔥 NOVO RECORDE!</div>
-        <div id="gameover-newmaxworld" class="new-record hidden">🌍 NOVO MUNDO MÁXIMO!</div>
-        <div class="stat-box">
-          <div class="stat-item">
-            <span class="stat-label">Pontuação</span>
-            <span class="stat-value" id="gameover-score">0</span>
+        <h2 class="title-small go-stage-title">GAME OVER</h2>
+
+        <div class="go-stage-stats">
+          <div id="gameover-newrecord" class="new-record hidden">🔥 NOVO RECORDE!</div>
+          <div id="gameover-newmaxworld" class="new-record hidden">🌍 NOVO MUNDO MÁXIMO!</div>
+          <div class="stat-box">
+            <div class="stat-item">
+              <span class="stat-label">Pontuação</span>
+              <span class="stat-value" id="gameover-score">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Recorde</span>
+              <span class="stat-value" id="gameover-record">0</span>
+            </div>
           </div>
-          <div class="stat-item">
-            <span class="stat-label">Recorde</span>
-            <span class="stat-value" id="gameover-record">0</span>
-          </div>
+          <div class="world-stat-line" id="gameover-current-world">MUNDO 1 — CÉU AZUL</div>
+          <div class="world-stat-line world-stat-highest">Maior mundo: <span id="gameover-highest-world">1 — CÉU AZUL</span></div>
         </div>
-        <div class="world-stat-line" id="gameover-current-world">MUNDO 1 — CÉU AZUL</div>
-        <div class="world-stat-line world-stat-highest">Maior mundo: <span id="gameover-highest-world">1 — CÉU AZUL</span></div>
-        <button id="btn-restart" class="btn btn-primary">🔄 JOGAR NOVAMENTE</button>
-        <button id="btn-continue" class="btn btn-continue">▶ CONTINUAR</button>
-        <button id="btn-gameover-menu" class="btn btn-secondary">🏠 MENU INICIAL</button>
+
+        <div class="go-stage-buttons">
+          <button id="btn-restart" class="btn btn-primary">🔄 JOGAR NOVAMENTE</button>
+          <button id="btn-continue" class="btn btn-continue">▶ CONTINUAR</button>
+          <button id="btn-gameover-menu" class="btn btn-secondary">🏠 MENU INICIAL</button>
+        </div>
       </div>
     </div>
 
