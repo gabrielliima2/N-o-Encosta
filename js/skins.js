@@ -10,12 +10,18 @@ const Skins = (() => {
     { id: 'red',     name: 'Vermelho', color: '#ff6b6b', cost: 0 },
     { id: 'blue',    name: 'Azul',     color: '#4ea8ff', cost: 100 },
     { id: 'green',   name: 'Verde',    color: '#4ade80', cost: 250 },
-    { id: 'gold',    name: 'Dourado',  color: '#f5c518', cost: 500 }
+    { id: 'gold',    name: 'Dourado',  color: '#f5c518', cost: 500 },
+    // Recompensas de progressão — desbloqueadas por ALCANÇAR um mundo, não por moedas
+    // (compatível com o sistema de compra acima, que continua intacto para as demais).
+    { id: 'sunset',  name: 'Pôr do Sol', color: '#ff9d3f', cost: 0, requiresWorld: 2 },
+    { id: 'storm',   name: 'Tempestade', color: '#8b95a3', cost: 0, requiresWorld: 4 },
+    { id: 'neon',    name: 'Neon',       color: '#ff2fd6', cost: 0, requiresWorld: 8 }
   ];
 
   function isUnlocked(id) {
     const skin = LIST.find(s => s.id === id);
     if (!skin) return false;
+    if (skin.requiresWorld) return Storage.getHighestWorld().id >= skin.requiresWorld;
     if (skin.cost === 0) return true; // skins gratuitas já nascem desbloqueadas
     return Storage.getPurchasedSkins().includes(id);
   }
@@ -39,6 +45,7 @@ const Skins = (() => {
   function purchase(id) {
     const skin = LIST.find(s => s.id === id);
     if (!skin) return { ok: false, reason: 'not_found' };
+    if (skin.requiresWorld) return { ok: false, reason: 'requires_world' }; // desbloqueia sozinha ao alcançar o mundo
     if (isUnlocked(id)) return { ok: false, reason: 'already_unlocked' };
 
     const success = Storage.spendCoins(skin.cost);

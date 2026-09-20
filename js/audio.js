@@ -29,7 +29,6 @@ const AudioManager = (() => {
     countdown: 'assets/audio/countdown.mp3',
     go: 'assets/audio/go.mp3'
   };
-  const MUSIC_FILE = 'assets/audio/music.mp3';
 
   let webAudioCtx = null;
   function getWebAudioCtx() {
@@ -89,6 +88,31 @@ const AudioManager = (() => {
     continueSfx: () => synthBeep({ freq: 500, glideTo: 800, duration: 0.18, type: 'triangle', volume: 0.2 })
   };
 
+  /**
+   * Sons ambiente OCASIONAIS por mundo (vento, trovão distante, bolha, brasa) —
+   * bem discretos, disparados raramente pelo game.js (nunca em loop contínuo,
+   * pra manter o custo mínimo). Não têm arquivo mapeado — sempre sintetizados.
+   */
+  function playWorldAmbientCue(ambientType) {
+    if (!Storage.getSoundOn()) return;
+    switch (ambientType) {
+      case 'rain': // trovão distante, bem discreto
+        synthBeep({ freq: 90, glideTo: 45, duration: 0.6, type: 'sawtooth', volume: 0.08 });
+        break;
+      case 'embers': // pequena "crepitação"
+        synthBeep({ freq: 220, glideTo: 140, duration: 0.15, type: 'square', volume: 0.06 });
+        break;
+      case 'bubbles': // bolha subindo
+        synthBeep({ freq: 500, glideTo: 900, duration: 0.2, type: 'sine', volume: 0.06 });
+        break;
+      case 'stars': // "brilho" sutil
+        synthBeep({ freq: 1200, glideTo: 1600, duration: 0.12, type: 'triangle', volume: 0.05 });
+        break;
+      default:
+        break;
+    }
+  }
+
   // ---------- SFX via arquivo (com fallback automático para o synth) ----------
 
   const sfxElements = {};
@@ -130,135 +154,230 @@ const AudioManager = (() => {
     }
   }
 
-  // ---------- Música de fundo (arquivo real OU loop sintetizado de fallback) ----------
+  // ---------- Música de fundo por mundo (arquivo real OU sintetizado por tema) ----------
+  //
+  // Estrutura de arquivos esperada (nenhum incluído neste pacote — ver
+  // assets/audio/music/README.md): assets/audio/music/music_<key>.mp3
+  // Enquanto não houver arquivo, cada mundo toca um TEMA SINTETIZADO
+  // diferente (escala/tempo/timbre próprios) — já dá variedade real sem
+  // depender de nenhum asset externo.
 
-  let musicEl = null;
-  let musicFileFailed = false;
+  const MUSIC_FILES = {
+    menu: 'assets/audio/music/music_menu.mp3',
+    world1: 'assets/audio/music/music_world_1.mp3',
+    world2: 'assets/audio/music/music_world_2.mp3',
+    world3: 'assets/audio/music/music_world_3.mp3',
+    world4: 'assets/audio/music/music_world_4.mp3',
+    world5: 'assets/audio/music/music_world_5.mp3',
+    world6: 'assets/audio/music/music_world_6.mp3',
+    world7: 'assets/audio/music/music_world_7.mp3',
+    worldSecret: 'assets/audio/music/music_world_secret.mp3'
+  };
+
+  const SYNTH_THEMES = {
+    menu:        { notes: [392.0, 440.0, 493.9, 440.0], tempo: 600, type: 'sine', vol: 0.05 },
+    world1:      { notes: [261.6, 329.6, 392.0, 329.6, 293.7, 392.0, 440.0, 329.6], tempo: 450, type: 'sine', vol: 0.06 },
+    world2:      { notes: [293.7, 349.2, 440.0, 349.2, 329.6, 440.0, 493.9, 349.2], tempo: 500, type: 'triangle', vol: 0.055 },
+    world3:      { notes: [220.0, 261.6, 246.9, 220.0, 196.0, 220.0], tempo: 620, type: 'sine', vol: 0.045 },
+    world4:      { notes: [196.0, 233.1, 196.0, 220.0, 207.7, 233.1], tempo: 300, type: 'sawtooth', vol: 0.05 },
+    world5:      { notes: [246.9, 277.2, 311.1, 277.2, 246.9, 220.0], tempo: 260, type: 'square', vol: 0.055 },
+    world6:      { notes: [174.6, 207.7, 196.0, 174.6, 155.6, 174.6], tempo: 700, type: 'sine', vol: 0.045 },
+    world7:      { notes: [329.6, 392.0, 466.2, 392.0, 349.2, 440.0], tempo: 550, type: 'triangle', vol: 0.05 },
+    worldSecret: { notes: [415.3, 493.9, 554.4, 466.2, 523.3, 392.0], tempo: 230, type: 'square', vol: 0.05 }
+  };
+
+  let currentMusicKey = 'world1';
   let musicState = 'stopped'; // 'stopped' | 'playing' | 'paused'
+  let fadeGain = 1; // multiplicador aplicado por cima do volume (0..1) — usado na troca de mundo
+  let fadeTimer = null;
 
-  // fallback: pequeno loop gerado (arpejo suave), original e leve — nunca usa material protegido
+  const musicElements = {};
+  const musicFileFailed = {};
+
   let synthMusicTimer = null;
   let synthMusicStep = 0;
-  const SYNTH_MUSIC_NOTES = [261.6, 329.6, 392.0, 329.6, 293.7, 392.0, 440.0, 329.6]; // C4 E4 G4 E4 D4 G4 A4 E4
+
+  function getMusicElement(key) {
+    if (!musicElements[key] && MUSIC_FILES[key]) {
+      const el = new Audio(MUSIC_FILES[key]);
+      el.loop = true;
+      el.preload = 'auto';
+      el.addEventListener('error', () => { musicFileFailed[key] = true; });
+      musicElements[key] = el;
+    }
+    return musicElements[key];
+  }
 
   function synthMusicTick() {
+    const theme = SYNTH_THEMES[currentMusicKey] || SYNTH_THEMES.world1;
     const ctx = getWebAudioCtx();
-    const vol = 0.06 * (Storage.getMusicVolume() / 100);
-    if (vol > 0) {
-      const freq = SYNTH_MUSIC_NOTES[synthMusicStep % SYNTH_MUSIC_NOTES.length];
+    const vol = theme.vol * (Storage.getMusicVolume() / 100) * fadeGain;
+    if (vol > 0.0005) {
+      const freq = theme.notes[synthMusicStep % theme.notes.length];
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = 'sine';
+      osc.type = theme.type;
       osc.frequency.setValueAtTime(freq, ctx.currentTime);
       gain.gain.setValueAtTime(0.0001, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(vol, ctx.currentTime + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.42);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + theme.tempo / 1000 * 0.9);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-      osc.stop(ctx.currentTime + 0.45);
+      osc.stop(ctx.currentTime + theme.tempo / 1000);
     }
     synthMusicStep++;
+
+    clearTimeout(synthMusicTimer);
+    synthMusicTimer = setTimeout(synthMusicTick, theme.tempo);
   }
 
   function startSynthMusicLoop() {
-    if (synthMusicTimer) return; // já rodando
+    if (synthMusicTimer) return;
     synthMusicTick();
-    synthMusicTimer = setInterval(synthMusicTick, 450);
   }
 
   function stopSynthMusicLoop(resetPattern) {
     if (synthMusicTimer) {
-      clearInterval(synthMusicTimer);
+      clearTimeout(synthMusicTimer);
       synthMusicTimer = null;
     }
     if (resetPattern) synthMusicStep = 0;
   }
 
-  function getMusicElement() {
-    if (!musicEl) {
-      musicEl = new Audio(MUSIC_FILE);
-      musicEl.loop = true;
-      musicEl.preload = 'auto';
-      musicEl.addEventListener('error', () => { musicFileFailed = true; });
-    }
-    return musicEl;
+  function isUsingFile(key) {
+    return !!MUSIC_FILES[key] && !musicFileFailed[key];
   }
 
-  /** Começa a música do zero (loop). Chamado ao iniciar uma partida. */
+  /** Aplica o fadeGain atual ao elemento de áudio ativo (se for o caso via arquivo) */
+  function applyFadeToActiveElement() {
+    if (isUsingFile(currentMusicKey) && musicElements[currentMusicKey]) {
+      musicElements[currentMusicKey].volume = (Storage.getMusicVolume() / 100) * fadeGain;
+    }
+  }
+
+  function rampFadeGain(from, to, durationMs, onDone) {
+    clearInterval(fadeTimer);
+    fadeGain = from;
+    const steps = 10;
+    let i = 0;
+    fadeTimer = setInterval(() => {
+      i++;
+      fadeGain = from + (to - from) * (i / steps);
+      applyFadeToActiveElement();
+      if (i >= steps) {
+        clearInterval(fadeTimer);
+        fadeGain = to;
+        applyFadeToActiveElement();
+        if (onDone) onDone();
+      }
+    }, durationMs / steps);
+  }
+
+  function startKey(key) {
+    currentMusicKey = key;
+    if (isUsingFile(key)) {
+      const el = getMusicElement(key);
+      try {
+        el.currentTime = 0;
+        el.volume = (Storage.getMusicVolume() / 100) * fadeGain;
+        const p = el.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {
+            musicFileFailed[key] = true;
+            if (musicState === 'playing') startSynthMusicLoop();
+          });
+        }
+      } catch (e) {
+        musicFileFailed[key] = true;
+        if (musicState === 'playing') startSynthMusicLoop();
+      }
+    } else {
+      startSynthMusicLoop();
+    }
+  }
+
+  function stopKey(key) {
+    if (isUsingFile(key) && musicElements[key]) {
+      musicElements[key].pause();
+      musicElements[key].currentTime = 0;
+    }
+    stopSynthMusicLoop(true);
+  }
+
+  /** Começa a música do mundo atual do zero (loop). Chamado ao iniciar uma partida. */
   function playMusic() {
     if (!Storage.getMusicOn()) { musicState = 'stopped'; return; }
     musicState = 'playing';
-
-    if (musicFileFailed) {
-      startSynthMusicLoop();
-      return;
-    }
-
-    const el = getMusicElement();
-    try {
-      el.currentTime = 0;
-      el.volume = Storage.getMusicVolume() / 100;
-      const p = el.play();
-      if (p && typeof p.catch === 'function') {
-        p.catch(() => {
-          musicFileFailed = true;
-          if (musicState === 'playing') startSynthMusicLoop();
-        });
-      }
-    } catch (e) {
-      musicFileFailed = true;
-      if (musicState === 'playing') startSynthMusicLoop();
-    }
+    fadeGain = 1;
+    startKey(currentMusicKey);
   }
 
   /** Pausa exatamente onde está (não reinicia). Usado ao entrar em PAUSE. */
   function pauseMusic() {
     if (musicState !== 'playing') return;
     musicState = 'paused';
+    clearInterval(fadeTimer);
 
-    if (musicFileFailed) {
+    if (isUsingFile(currentMusicKey) && musicElements[currentMusicKey]) {
+      musicElements[currentMusicKey].pause();
+    } else {
       stopSynthMusicLoop(false); // mantém o "passo" do padrão — não volta ao início
-    } else if (musicEl) {
-      musicEl.pause(); // HTMLAudio guarda a posição sozinho
     }
   }
 
-  /** Retoma de onde parou. Usado ao sair do PAUSE. Se a música nunca chegou a
-   *  tocar (ex.: estava OFF e o jogador ligou durante a pausa), começa do zero. */
+  /** Retoma de onde parou. Usado ao sair do PAUSE. */
   function resumeMusic() {
     if (!Storage.getMusicOn()) return;
 
-    if (musicState === 'stopped') {
-      playMusic();
-      return;
-    }
+    if (musicState === 'stopped') { playMusic(); return; }
     if (musicState !== 'paused') return;
     musicState = 'playing';
+    fadeGain = 1;
 
-    if (musicFileFailed) {
-      startSynthMusicLoop();
-    } else if (musicEl) {
-      const p = musicEl.play();
+    if (isUsingFile(currentMusicKey) && musicElements[currentMusicKey]) {
+      const p = musicElements[currentMusicKey].play();
       if (p && typeof p.catch === 'function') p.catch(() => {});
+    } else {
+      startSynthMusicLoop();
     }
   }
 
   /** Para e reseta (Game Over, Menu Inicial). */
   function stopMusic() {
     musicState = 'stopped';
-    stopSynthMusicLoop(true);
-    if (musicEl) {
-      musicEl.pause();
-      musicEl.currentTime = 0;
+    clearInterval(fadeTimer);
+    fadeGain = 1;
+    stopKey(currentMusicKey);
+  }
+
+  /**
+   * Troca para a música do mundo `key`, com fade-out da anterior e fade-in
+   * da nova (crossfade simples e barato — ver comentário no topo do arquivo).
+   * Se a música não estiver tocando agora (ex.: menu, pausa), só troca a
+   * "música atual" silenciosamente — o próximo playMusic()/resumeMusic() já
+   * usa a nova.
+   */
+  function setWorldMusic(key) {
+    if (key === currentMusicKey) return;
+    if (musicState !== 'playing') {
+      currentMusicKey = key;
+      return;
     }
+
+    const oldKey = currentMusicKey;
+    rampFadeGain(fadeGain, 0, 250, () => {
+      stopKey(oldKey);
+      startKey(key);
+      rampFadeGain(0, 1, 400, null);
+    });
   }
 
   // ---------- Volume ----------
 
   function setMusicVolume(percent) {
     Storage.setMusicVolume(percent);
-    if (musicEl) musicEl.volume = percent / 100;
+    applyFadeToActiveElement();
   }
 
   function setSfxVolume(percent) {
@@ -286,7 +405,8 @@ const AudioManager = (() => {
   }
 
   return {
-    playSFX, playMusic, pauseMusic, resumeMusic, stopMusic,
+    playSFX, playMusic, pauseMusic, resumeMusic, stopMusic, setWorldMusic,
+    playWorldAmbientCue,
     setMusicVolume, setSfxVolume, unlock, getDiagnostics
   };
 })();

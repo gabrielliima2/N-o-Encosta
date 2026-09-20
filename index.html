@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Não Encosta!</title>
-<!-- Fonte "de jogo" (arredondada/forte). Fallback local já cobre offline —
-     veja assets/fonts/README.md para deixar isso 100% offline no app futuro. -->
+<!-- Fonte de destaque (títulos/números/nomes de mundo) + fonte de leitura (textos menores).
+     Fallback local já cobre offline — veja assets/fonts/README.md para deixar 100% offline no app futuro. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -25,6 +25,15 @@
       <div id="hud-coins">🪙 <span id="hud-coins-value">0</span></div>
     </div>
 
+    <!-- Indicador discreto de mundo (nome + barra de progresso até o próximo) -->
+    <div id="world-hud" class="hidden">
+      <div id="world-hud-name">MUNDO 1 · CÉU AZUL</div>
+      <div class="world-hud-bar-track"><div id="world-hud-bar-fill" class="world-hud-bar-fill"></div></div>
+    </div>
+
+    <!-- Container de toasts (transição de mundo, dica de segredo, conquistas) -->
+    <div id="toast-container"></div>
+
     <!-- TELA: MENU -->
     <div id="screen-menu" class="screen">
       <div class="panel panel-menu">
@@ -33,6 +42,7 @@
         </div>
         <h1 class="title">NÃO ENCOSTA!</h1>
         <div class="record-line">🏆 Recorde: <span id="menu-record">0</span></div>
+        <div class="record-line record-line-small">🌍 Maior mundo: <span id="menu-highest-world">1</span></div>
         <button id="btn-play" class="btn btn-primary btn-lg">▶ JOGAR</button>
         <button id="btn-skins" class="btn btn-secondary">🎨 SKINS &amp; LOJA</button>
         <button id="btn-settings" class="btn btn-secondary">⚙ CONFIGURAÇÕES</button>
@@ -44,6 +54,7 @@
       <div class="panel panel-enter">
         <h2 class="title-small">GAME OVER</h2>
         <div id="gameover-newrecord" class="new-record hidden">🔥 NOVO RECORDE!</div>
+        <div id="gameover-newmaxworld" class="new-record hidden">🌍 NOVO MUNDO MÁXIMO!</div>
         <div class="stat-box">
           <div class="stat-item">
             <span class="stat-label">Pontuação</span>
@@ -54,6 +65,8 @@
             <span class="stat-value" id="gameover-record">0</span>
           </div>
         </div>
+        <div class="world-stat-line" id="gameover-current-world">MUNDO 1 — CÉU AZUL</div>
+        <div class="world-stat-line world-stat-highest">Maior mundo: <span id="gameover-highest-world">1 — CÉU AZUL</span></div>
         <button id="btn-restart" class="btn btn-primary">🔄 JOGAR NOVAMENTE</button>
         <button id="btn-continue" class="btn btn-continue">▶ CONTINUAR</button>
         <button id="btn-gameover-menu" class="btn btn-secondary">🏠 MENU INICIAL</button>
@@ -143,6 +156,8 @@
   <script src="js/audio.js"></script>
   <script src="js/skins.js"></script>
   <script src="js/ads.js"></script>
+  <script src="js/worlds.js"></script>
+  <script src="js/achievements.js"></script>
   <script src="js/player.js"></script>
   <script src="js/obstacles.js"></script>
   <script src="js/coins.js"></script>

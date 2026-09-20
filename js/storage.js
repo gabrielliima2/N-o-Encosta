@@ -14,7 +14,9 @@ const Storage = (() => {
     MUSIC: 'naoEncosta_music',
     VIBRATION: 'naoEncosta_vibration',
     MUSIC_VOLUME: 'naoEncosta_musicVolume',
-    SFX_VOLUME: 'naoEncosta_sfxVolume'
+    SFX_VOLUME: 'naoEncosta_sfxVolume',
+    HIGHEST_WORLD: 'naoEncosta_highestWorld',
+    ACHIEVEMENTS: 'naoEncosta_achievements'
   };
 
   function getRecord() {
@@ -114,6 +116,48 @@ const Storage = (() => {
     localStorage.setItem(KEYS.SFX_VOLUME, String(value));
   }
 
+  // ---------- Progressão de mundos ----------
+
+  /** Maior mundo já alcançado (persistente — nunca reseta ao morrer) */
+  function getHighestWorld() {
+    try {
+      const raw = localStorage.getItem(KEYS.HIGHEST_WORLD);
+      return raw ? JSON.parse(raw) : { id: 1, name: null };
+    } catch (e) {
+      return { id: 1, name: null };
+    }
+  }
+
+  /** Só grava se for realmente maior que o atual — retorna true se bateu um novo máximo */
+  function setHighestWorldIfBigger(id, name) {
+    const current = getHighestWorld();
+    if (id > current.id) {
+      localStorage.setItem(KEYS.HIGHEST_WORLD, JSON.stringify({ id, name }));
+      return true;
+    }
+    return false;
+  }
+
+  // ---------- Conquistas ----------
+
+  function getUnlockedAchievements() {
+    try {
+      const raw = localStorage.getItem(KEYS.ACHIEVEMENTS);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /** Retorna true se ESTA chamada desbloqueou (ou seja, é a primeira vez) */
+  function unlockAchievement(id) {
+    const list = getUnlockedAchievements();
+    if (list.includes(id)) return false;
+    list.push(id);
+    localStorage.setItem(KEYS.ACHIEVEMENTS, JSON.stringify(list));
+    return true;
+  }
+
   return {
     getRecord, setRecord,
     getCoins, addCoins, spendCoins,
@@ -123,6 +167,8 @@ const Storage = (() => {
     getMusicOn, setMusicOn,
     getVibrationOn, setVibrationOn,
     getMusicVolume, setMusicVolume,
-    getSfxVolume, setSfxVolume
+    getSfxVolume, setSfxVolume,
+    getHighestWorld, setHighestWorldIfBigger,
+    getUnlockedAchievements, unlockAchievement
   };
 })();

@@ -13,7 +13,13 @@ class ObstacleManager {
     this.distanceSinceLast = 0;
     this.groundHeight = 60;
     this.ceilingHeight = 30;
-    this.groundScroll = 0; // só cosmético — desloca a textura de grama do chão junto com a velocidade
+    this.groundScroll = 0; // só cosmético — desloca a textura do chão junto com a velocidade
+    this.theme = null; // tema visual do mundo atual (cores) — ver worlds.js / setTheme()
+  }
+
+  /** Chamado pelo game.js quando o mundo muda — só afeta o visual, nunca a colisão */
+  setTheme(theme) {
+    this.theme = theme;
   }
 
   reset() {
@@ -50,14 +56,20 @@ class ObstacleManager {
     return { speed, gap, spacing };
   }
 
-  update(dt, score) {
+  update(dt, score, obstacleSet) {
     const { speed, gap, spacing } = this.getDifficulty(score);
 
-    this.groundScroll = (this.groundScroll || 0) + speed * dt; // só cosmético (textura da grama)
+    this.groundScroll = (this.groundScroll || 0) + speed * dt; // só cosmético (textura do chão)
 
     // move e remove obstáculos que já sairam da tela
     for (const o of this.obstacles) {
       o.x -= speed * dt;
+      if (o.oscillate) {
+        // oscila o CENTRO do vão dentro da mesma margem segura calculada no spawn —
+        // o tamanho do vão (gapHeight) nunca muda, então a passagem continua justa.
+        o.oscTime += dt;
+        o.gapCenter = o.baseGapCenter + Math.sin(o.oscTime * o.oscSpeed + o.oscPhase) * o.oscAmplitude;
+      }
     }
     this.obstacles = this.obstacles.filter(o => o.x + this.pillarWidth > -10);
 
@@ -65,15 +77,14 @@ class ObstacleManager {
     this.distanceSinceLast += speed * dt;
     if (this.distanceSinceLast >= spacing) {
       this.distanceSinceLast = 0;
-      return this.spawn(gap); // Etapa 2: retorna o obstáculo criado (usado por coins.js para posicionar moedas com segurança)
+      return this.spawn(gap, obstacleSet); // Etapa 2: retorna o obstáculo criado (usado por coins.js)
     }
     return null;
   }
 
-  spawn(gapHeight) {
+  spawn(gapHeight, obstacleSet) {
     const playableTop = this.ceilingHeight + 20;
     const playableBottom = this.canvasHeight - this.groundHeight - 20;
-    const playableHeight = playableBottom - playableTop;
 
     // centro do vão em posição aleatória, respeitando margens de segurança
     const minCenter = playableTop + gapHeight / 2;
@@ -83,10 +94,27 @@ class ObstacleManager {
     const obstacle = {
       x: this.canvasWidth + 10,
       gapCenter,
+      baseGapCenter: gapCenter,
       gapHeight,
       scored: false,
-      textureSeed: Math.random() // só cosmético — usado pelo draw() para textura estável (não afeta colisão)
+      textureSeed: Math.random(), // só cosmético — usado pelo draw() para textura estável (não afeta colisão)
+      oscillate: false,
+      oscTime: 0, oscSpeed: 0, oscAmplitude: 0, oscPhase: 0
     };
+
+    // Mecânica progressiva: a partir do mundo "Tempestade" (obstacleSet: 'oscillate'),
+    // parte dos obstáculos passa a ter o vão oscilando verticalmente. A amplitude é
+    // sempre limitada pela mesma folga de segurança (minCenter/maxCenter) já usada
+    // para a posição inicial — nunca pode empurrar o vão para dentro do chão/teto.
+    if ((obstacleSet === 'oscillate' || obstacleSet === 'oscillate-fast') && Math.random() < 0.6) {
+      const slack = Math.max(0, Math.min(gapCenter - minCenter, maxCenter - gapCenter));
+      const desiredAmplitude = obstacleSet === 'oscillate-fast' ? 26 : 17;
+      obstacle.oscillate = slack > 6; // só oscila se houver folga real (senão fica parado — sempre justo)
+      obstacle.oscAmplitude = Math.min(desiredAmplitude, slack * 0.85);
+      obstacle.oscSpeed = obstacleSet === 'oscillate-fast' ? 2.0 : 1.2;
+      obstacle.oscPhase = Math.random() * Math.PI * 2;
+    }
+
     this.obstacles.push(obstacle);
     return obstacle;
   }
@@ -138,6 +166,18 @@ class ObstacleManager {
     return scored;
   }
 
+  /** Clareia (percent>0) ou escurece (percent<0) uma cor hex — mesma receita usada em player.js */
+  _shade(hex, percent) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    let r = (num >> 16) + Math.round(255 * (percent / 100));
+    let g = ((num >> 8) & 0x00ff) + Math.round(255 * (percent / 100));
+    let b = (num & 0x0000ff) + Math.round(255 * (percent / 100));
+    r = Math.max(0, Math.min(255, r));
+    g = Math.max(0, Math.min(255, g));
+    b = Math.max(0, Math.min(255, b));
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
   /** Pequeno "ruído" determinístico a partir de uma semente — nunca muda de frame a frame */
   _seededBlotches(seed, count, w, h) {
     const blotches = [];
@@ -152,62 +192,68 @@ class ObstacleManager {
     return blotches;
   }
 
-  /** Desenha um segmento de pilar "vivo" (hera/cacto estilizado) com volume, textura e sombra */
+  /** Desenha um segmento de pilar com volume, textura e sombra — cor vem do tema do mundo atual */
   _drawPillarSegment(ctx, x, y, w, h, seed) {
     if (h <= 0) return;
+    const colors = (this.theme && this.theme.pillar) || ['#bef7c6', '#4ade80', '#159c46'];
 
     // sombra projetada sutil à direita do pilar (dá sensação de profundidade)
-    ctx.fillStyle = 'rgba(10, 40, 20, 0.18)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.fillRect(x + w - 6, y, 8, h);
 
     // corpo com gradiente (luz vindo da esquerda/topo — consistente com o resto do jogo)
     const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-    grad.addColorStop(0, '#bef7c6');
-    grad.addColorStop(0.35, '#4ade80');
-    grad.addColorStop(1, '#159c46');
+    grad.addColorStop(0, colors[0]);
+    grad.addColorStop(0.35, colors[1]);
+    grad.addColorStop(1, colors[2]);
     ctx.fillStyle = grad;
     ctx.fillRect(x, y, w, h);
 
     // highlight vertical (lado esquerdo iluminado — "bevel" de luz)
     const hl = ctx.createLinearGradient(x, 0, x + w * 0.28, 0);
-    hl.addColorStop(0, 'rgba(255,255,255,0.55)');
+    hl.addColorStop(0, 'rgba(255,255,255,0.5)');
     hl.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = hl;
     ctx.fillRect(x, y, w * 0.28, h);
 
-    // textura procedural: pequenas manchas/folhas estáveis (não recalculadas a cada frame)
+    // textura procedural: pequenas manchas estáveis (não recalculadas a cada frame)
     const blotches = this._seededBlotches(seed, Math.max(3, Math.floor(h / 26)), w, h);
     for (const b of blotches) {
-      ctx.fillStyle = 'rgba(10, 70, 30, 0.16)';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
       ctx.beginPath();
       ctx.ellipse(x + b.x, y + b.y, 6, 3.5, 0.4, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // sombra interna na base (ambient occlusion simulada)
-    ctx.fillStyle = 'rgba(6, 40, 18, 0.22)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
     ctx.fillRect(x, y + h - 10, w, 10);
   }
 
   draw(ctx) {
+    const theme = this.theme;
+    const groundColor = (theme && theme.ground) || '#4a2f1c';
+    const groundTop = this._shade(groundColor, 35);
+    const rimColor = this._shade(groundColor, 55);
+
     // ---------- chão ----------
     const groundY = this.canvasHeight - this.groundHeight;
 
     const groundGrad = ctx.createLinearGradient(0, groundY, 0, this.canvasHeight);
-    groundGrad.addColorStop(0, '#7a5236');
-    groundGrad.addColorStop(1, '#4a2f1c');
+    groundGrad.addColorStop(0, groundTop);
+    groundGrad.addColorStop(1, groundColor);
     ctx.fillStyle = groundGrad;
     ctx.fillRect(0, groundY, this.canvasWidth, this.groundHeight);
 
-    // faixa de grama no topo do chão (borda viva, não lisa)
-    const grassGrad = ctx.createLinearGradient(0, groundY, 0, groundY + 12);
-    grassGrad.addColorStop(0, '#7be495');
-    grassGrad.addColorStop(1, '#3fae5c');
-    ctx.fillStyle = grassGrad;
+    // beirada iluminada no topo do chão (muda de tom com o mundo — grama, gelo, areia vulcânica, etc.)
+    const rimGrad = ctx.createLinearGradient(0, groundY, 0, groundY + 12);
+    rimGrad.addColorStop(0, rimColor);
+    rimGrad.addColorStop(1, groundTop);
+    ctx.fillStyle = rimGrad;
     ctx.fillRect(0, groundY, this.canvasWidth, 10);
 
-    // tufos de grama (dente-de-serra simples) — puramente decorativo
-    ctx.fillStyle = '#3fae5c';
+    // tufos na beirada (dente-de-serra simples) — puramente decorativo
+    ctx.fillStyle = rimColor;
     const tuftW = 14;
     for (let gx = -((this.groundScroll || 0) % tuftW); gx < this.canvasWidth; gx += tuftW) {
       ctx.beginPath();
@@ -243,15 +289,16 @@ class ObstacleManager {
     }
   }
 
-  /** Lábio decorativo arredondado na boca do vão — puramente visual */
+  /** Lábio decorativo arredondado na boca do vão — puramente visual, cor vem do tema do mundo */
   _drawLip(ctx, x, edgeY, w, isTopEdge) {
+    const colors = (this.theme && this.theme.pillar) || ['#f2fff4', '#22c55e', '#128a3e'];
     const lipH = 16;
     const y = isTopEdge ? edgeY - lipH : edgeY;
 
     const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-    grad.addColorStop(0, '#f2fff4');
-    grad.addColorStop(0.4, '#22c55e');
-    grad.addColorStop(1, '#128a3e');
+    grad.addColorStop(0, this._shade(colors[0], 15));
+    grad.addColorStop(0.4, colors[1]);
+    grad.addColorStop(1, colors[2]);
     ctx.fillStyle = grad;
 
     const r = 8;

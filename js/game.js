@@ -38,6 +38,12 @@ const Game = (() => {
   let hasContinuedThisRun = false; // CONTINUAR só pode ser usado 1x por partida
   let continueRequestInProgress = false; // trava contra cliques duplicados durante anúncio/countdown
 
+  // ---------- Progressão de mundos (ver worlds.js) ----------
+  let currentWorld = Worlds.getAll()[0];
+  let runStartHighestWorldId = 1; // "maior mundo" ANTES desta partida começar — usado pra saber se bateu um novo máximo
+  let secretHintShown = false; // no máximo 1 dica de segredo por partida
+  let ambientCueCooldown = 0; // som ambiente do mundo — bem ocasional, nunca em loop
+
   const CONTINUE_INVULNERABLE_SECONDS = 2;
   const COUNTDOWN_STEP_MS = 1000; // duração de cada número (3, 2, 1) — total ~3s
 
@@ -50,6 +56,7 @@ const Game = (() => {
     bindInput();
     UI.updateMenuRecord(Storage.getRecord());
     UI.updateCoins(Storage.getCoins());
+    UI.updateMenuHighestWorld(Storage.getHighestWorld());
     UI.refreshSettingsToggles();
 
     // Diagnóstico de dev (Seção 13 do pedido) — visível no console
@@ -124,19 +131,40 @@ const Game = (() => {
     score = 0;
     hasContinuedThisRun = false;
     continueRequestInProgress = false;
+    secretHintShown = false;
+    ambientCueCooldown = 8 + Math.random() * 12;
+    runStartHighestWorldId = Storage.getHighestWorld().id; // referência pra saber, no Game Over, se bateu um novo máximo
+
     player = new Player(width, height);
     obstacles = new ObstacleManager(width, height);
     coins = new CoinManager(width, height);
     particles = new ParticleSystem(width, height);
     state = STATE.PLAYING;
 
+    // Toda partida nova começa sempre no Mundo 1 (o progresso da PARTIDA reseta;
+    // moedas/skins/recorde/maior-mundo, que são da CONTA, continuam intactos).
+    currentWorld = Worlds.getWorldForScore(0);
+    obstacles.setTheme(currentWorld);
+    Background.setWorld(currentWorld);
+    AudioManager.setWorldMusic(currentWorld.musicKey);
+
     UI.showScreen(null);
     UI.showHud(true);
     UI.showPauseButton(true);
+    UI.showWorldHud(true);
     UI.updateScore(0);
     UI.updateCoins(Storage.getCoins());
+    UI.updateWorldHud(currentWorld.name, currentWorld.id, Worlds.getProgress(0));
 
     AudioManager.playMusic(); // música começa ao iniciar a partida (Jogar / Jogar Novamente)
+
+    // "PRIMEIRO VOO" — só desbloqueia mesmo na primeira vez (Storage.unlockAchievement dedupa sozinho)
+    const unlocked = Achievements.checkAll({
+      worldId: currentWorld.id,
+      purchasedSkinsCount: Storage.getPurchasedSkins().length,
+      isFirstPlay: true
+    });
+    unlocked.forEach(a => UI.showToast([a.title, a.desc], 2200, 'achievement'));
 
     lastTime = performance.now();
   }
@@ -144,6 +172,7 @@ const Game = (() => {
   function endGame() {
     state = STATE.GAME_OVER;
     UI.showPauseButton(false);
+    UI.showWorldHud(false);
     Audio2D.playHit();
     Audio2D.vibrateHit();
     AudioManager.stopMusic(); // música para ao morrer (não toca na tela de Game Over)
@@ -157,11 +186,20 @@ const Game = (() => {
       Audio2D.vibrateRecord();
     }
 
+    const highest = Storage.getHighestWorld();
+    const isNewMaxWorld = currentWorld.id > runStartHighestWorldId;
+
     UI.showHud(false);
     setTimeout(() => Audio2D.playGameOver(), 120);
 
     const continueAvailable = !hasContinuedThisRun;
-    UI.showGameOver(score, Math.max(score, record), isNewRecord, continueAvailable);
+    UI.showGameOver(score, Math.max(score, record), isNewRecord, continueAvailable, {
+      currentWorldId: currentWorld.id,
+      currentWorldName: currentWorld.name,
+      highestWorldId: highest.id,
+      highestWorldName: highest.name || currentWorld.name,
+      isNewMaxWorld
+    });
   }
 
   /** Botão CONTINUAR da tela de Game Over — dispara o anúncio recompensado (placeholder) */
@@ -227,7 +265,9 @@ const Game = (() => {
       UI.showScreen(null);
       UI.showHud(true);
       UI.showPauseButton(true);
+      UI.showWorldHud(true);
       UI.updateScore(score);
+      UI.updateWorldHud(currentWorld.name, currentWorld.id, Worlds.getProgress(score));
       AudioManager.playMusic(); // retoma a música junto com a partida, após o "VAI!"
       lastTime = performance.now(); // evita "salto" no dt após o tempo congelado
     }, 500 + COUNTDOWN_STEP_MS * 3 + 500);
@@ -240,6 +280,7 @@ const Game = (() => {
     UI.showPauseButton(false);
     UI.updateMenuRecord(Storage.getRecord());
     UI.updateCoins(Storage.getCoins());
+    UI.updateMenuHighestWorld(Storage.getHighestWorld());
     AudioManager.stopMusic(); // garante que a música pare ao voltar ao menu
     UI.showScreen('screenMenu');
   }
@@ -296,8 +337,10 @@ const Game = (() => {
     state = STATE.MENU;
     UI.showHud(false);
     UI.showPauseButton(false);
+    UI.showWorldHud(false);
     UI.updateMenuRecord(Storage.getRecord());
     UI.updateCoins(Storage.getCoins());
+    UI.updateMenuHighestWorld(Storage.getHighestWorld());
     AudioManager.stopMusic(); // a partida foi abandonada — música para
     UI.showScreen('screenMenu');
   }
@@ -343,7 +386,7 @@ const Game = (() => {
 
     player.update(dt);
 
-    const newObstacle = obstacles.update(dt, score);
+    const newObstacle = obstacles.update(dt, score, currentWorld.obstacleSet);
     if (newObstacle) {
       coins.trySpawnFromObstacle(newObstacle, obstacles.pillarWidth);
     }
@@ -352,12 +395,62 @@ const Game = (() => {
     coins.update(dt, speed);
     if (particles) particles.update(dt); // só visual
 
+    // som ambiente do mundo — bem raro e discreto, nunca em loop contínuo
+    ambientCueCooldown -= dt;
+    if (ambientCueCooldown <= 0 && currentWorld.ambient.type !== 'none') {
+      AudioManager.playWorldAmbientCue(currentWorld.ambient.type);
+      ambientCueCooldown = 15 + Math.random() * 20;
+    }
+
     const gained = obstacles.collectScore(player.x);
     if (gained > 0) {
       score += gained;
       UI.updateScore(score);
       Audio2D.playPoint();
       if (particles) particles.spawnPassSparkle(player.x, player.y); // só visual
+
+      // ---------- Progressão de mundos ----------
+      const newWorld = Worlds.getWorldForScore(score);
+      if (newWorld.id !== currentWorld.id) {
+        currentWorld = newWorld;
+        obstacles.setTheme(currentWorld);
+        Background.setWorld(currentWorld);
+        AudioManager.setWorldMusic(currentWorld.musicKey);
+        Audio2D.playMenuOpen(); // reaproveita o "chime" já existente como som de transição
+
+        // "maior mundo alcançado" já atualiza aqui (você já está vivendo esse mundo agora,
+        // não precisa sobreviver até o Game Over pra isso contar)
+        Storage.setHighestWorldIfBigger(currentWorld.id, currentWorld.name);
+
+        const displayName = Worlds.getDisplayName(currentWorld, Storage.getHighestWorld().id);
+        UI.showToast(['NOVO MUNDO!', `MUNDO ${currentWorld.id} — ${displayName.toUpperCase()}`], 1700, 'world');
+
+        // pequenas recompensas psicológicas (sem inventar ranking global) — mostradas
+        // um pouco depois pra não competir com o toast de "NOVO MUNDO!" acima
+        if (currentWorld.id === 5) {
+          setTimeout(() => UI.showToast(['VOCÊ ESTÁ CHEGANDO LONGE!'], 1500, 'hint'), 1900);
+        } else if (currentWorld.id === 7) {
+          setTimeout(() => UI.showToast(['SEU MAIOR AVANÇO ATÉ AGORA!'], 1500, 'hint'), 1900);
+        }
+
+        const unlocked = Achievements.checkAll({
+          worldId: currentWorld.id,
+          purchasedSkinsCount: Storage.getPurchasedSkins().length,
+          isFirstPlay: false
+        });
+        unlocked.forEach((a, i) => {
+          setTimeout(() => UI.showToast([a.title, a.desc], 2200, 'achievement'), 1900 + i * 900);
+        });
+      } else if (!secretHintShown) {
+        // "Será que existe?" — no máximo 1 dica por partida, só quando não há troca de mundo neste frame
+        const hint = Worlds.getSecretHint(score);
+        if (hint) {
+          secretHintShown = true;
+          UI.showToast([hint], 1600, 'hint');
+        }
+      }
+
+      UI.updateWorldHud(currentWorld.name, currentWorld.id, Worlds.getProgress(score));
     }
 
     if (coins.checkCollision(player.getBounds())) {
