@@ -93,7 +93,8 @@ const UI = (() => {
     el.menuHighestWorld.textContent = highest.name ? `${highest.id} — ${highest.name}` : String(highest.id);
   }
 
-  function showGameOver(score, record, isNewRecord, continueAvailable, worldInfo) {
+function showGameOver(score, record, isNewRecord, continueAvailable, worldInfo) {
+  setTimeout(() => {
     el.gameoverScore.textContent = String(score);
     el.gameoverRecord.textContent = String(record);
     el.gameoverNewRecord.classList.toggle('hidden', !isNewRecord);
@@ -106,7 +107,8 @@ const UI = (() => {
     }
 
     showScreen('screenGameover');
-  }
+  }, 1000); // 1000 ms = 1 segundo
+}
 
   function setAdLoadingText(text) {
     el.adLoadingText.textContent = text;
