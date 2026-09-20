@@ -94,20 +94,33 @@ const UI = (() => {
   }
 
 function showGameOver(score, record, isNewRecord, continueAvailable, worldInfo) {
+  // 1. Atualiza os textos e exibe a tela INSTANTANEAMENTE
+  el.gameoverScore.textContent = String(score);
+  el.gameoverRecord.textContent = String(record);
+  el.gameoverNewRecord.classList.toggle('hidden', !isNewRecord);
+  el.btnContinue.classList.toggle('hidden', !continueAvailable);
+
+  if (worldInfo) {
+    el.gameoverCurrentWorld.textContent = `MUNDO ${worldInfo.currentWorldId} — ${worldInfo.currentWorldName.toUpperCase()}`;
+    el.gameoverHighestWorld.textContent = `${worldInfo.highestWorldId} — ${worldInfo.highestWorldName.toUpperCase()}`;
+    el.gameoverNewMaxWorld.classList.toggle('hidden', !worldInfo.isNewMaxWorld);
+  }
+
+  showScreen('screenGameover');
+
+  // 2. Prepara os botões: esconde e remove a animação anterior
+  const buttons = document.querySelectorAll('#screenGameover button');
+  buttons.forEach(btn => {
+    btn.classList.remove('fade-in');
+    btn.style.opacity = '0';
+  });
+
+  // 3. Após 0.5s (500ms), ativa a transição de visibilidade
   setTimeout(() => {
-    el.gameoverScore.textContent = String(score);
-    el.gameoverRecord.textContent = String(record);
-    el.gameoverNewRecord.classList.toggle('hidden', !isNewRecord);
-    el.btnContinue.classList.toggle('hidden', !continueAvailable);
-
-    if (worldInfo) {
-      el.gameoverCurrentWorld.textContent = `MUNDO ${worldInfo.currentWorldId} — ${worldInfo.currentWorldName.toUpperCase()}`;
-      el.gameoverHighestWorld.textContent = `${worldInfo.highestWorldId} — ${worldInfo.highestWorldName.toUpperCase()}`;
-      el.gameoverNewMaxWorld.classList.toggle('hidden', !worldInfo.isNewMaxWorld);
-    }
-
-    showScreen('screenGameover');
-  }, 1000); // 1000 ms = 1 segundo
+    buttons.forEach(btn => {
+      btn.classList.add('fade-in');
+    });
+  }, 500);
 }
 
   function setAdLoadingText(text) {
