@@ -93,21 +93,60 @@ const UI = (() => {
     el.menuHighestWorld.textContent = highest.name ? `${highest.id} — ${highest.name}` : String(highest.id);
   }
 
-function showGameOver(score, record, isNewRecord, continueAvailable, worldInfo) {
-  el.gameoverScore.textContent = String(score);
-  el.gameoverRecord.textContent = String(record);
-  el.gameoverNewRecord.classList.toggle('hidden', !isNewRecord);
-  setTimeout(() => {
-    el.btnContinue.classList.toggle('hidden', !continueAvailable);
-    showScreen('screenGameover');
-  }, 1000); // 1000 ms = 1 segundo
-    
+// Função auxiliar para animar a contagem do número
+function animateValue(element, start, end, duration) {
+  if (start === end) {
+    element.textContent = String(end);
+    return;
+  }
 
-    if (worldInfo) {
-      el.gameoverCurrentWorld.textContent = `MUNDO ${worldInfo.currentWorldId} — ${worldInfo.currentWorldName.toUpperCase()}`;
-      el.gameoverHighestWorld.textContent = `${worldInfo.highestWorldId} — ${worldInfo.highestWorldName.toUpperCase()}`;
-      el.gameoverNewMaxWorld.classList.toggle('hidden', !worldInfo.isNewMaxWorld);
+  const startTime = performance.now();
+
+  function updateNumber(currentTime) {
+    const elapsedTime = currentTime - startTime;
+    const progress = Math.min(elapsedTime / duration, 1);
+    
+    // Calcula o valor atual proporcional ao tempo decorrido
+    const currentValue = Math.floor(progress * (end - start) + start);
+    element.textContent = String(currentValue);
+
+    if (progress < 1) {
+      requestAnimationFrame(updateNumber);
     }
+  }
+
+  requestAnimationFrame(updateNumber);
+}
+
+function showGameOver(score, record, isNewRecord, continueAvailable, worldInfo) {
+  // 1. Reseta os textos numéricos para 0 imediatamente
+  el.gameoverScore.textContent = '0';
+  el.gameoverRecord.textContent = '0';
+
+  el.gameoverNewRecord.classList.toggle('hidden', !isNewRecord);
+  el.btnContinue.classList.toggle('hidden', !continueAvailable);
+
+  if (worldInfo) {
+    el.gameoverCurrentWorld.textContent = `MUNDO ${worldInfo.currentWorldId} — ${worldInfo.currentWorldName.toUpperCase()}`;
+    el.gameoverHighestWorld.textContent = `${worldInfo.highestWorldId} — ${worldInfo.highestWorldName.toUpperCase()}`;
+    el.gameoverNewMaxWorld.classList.toggle('hidden', !worldInfo.isNewMaxWorld);
+  }
+
+  // Reseta a visibilidade dos botões
+  const panel = document.querySelector('#screen-gameover .panel');
+  panel.classList.remove('show-buttons');
+
+  // 2. Exibe a tela de Game Over instantaneamente
+  showScreen('screenGameover');
+
+  // 3. Anima os números de 0 até o valor real (duração de 400ms = bem rápido)
+  animateValue(el.gameoverScore, 0, score, 400);
+  animateValue(el.gameoverRecord, 0, record, 400);
+
+  // 4. Após 0.5s (500ms), faz o fade-in dos botões
+  setTimeout(() => {
+    panel.classList.add('show-buttons');
+  }, 500);
 }
 
   function setAdLoadingText(text) {
